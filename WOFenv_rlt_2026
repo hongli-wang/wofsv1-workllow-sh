@@ -1,0 +1,12 @@
+#setenv event `date -d '9 hours ago' +%Y%m%d`
+#setenv event 20260309
+#setenv event 20260609
+#setenv event 20260801
+#setenv event 20260929
+#setenv event 20261010
+setenv event 20260727
+setenv CENTRALDIR  /scratch4/NCEPDEV/fv3-cam/Hongli.Wang/WoFS
+setenv SCRIPTDIR  ${CENTRALDIR}/scripts/WOFS_RLT_2026
+setenv TOP_DIR  /scratch4/NCEPDEV/stmp/Hongli.Wang/wofs/realtime 
+setenv RUNDIR $TOP_DIR/${event}
+
