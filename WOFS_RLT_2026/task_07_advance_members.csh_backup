@@ -1,0 +1,415 @@
+#!/bin/csh -f
+#
+# task_07_advance_members.csh
+#
+# Advance WoFS ensemble members:
+#   1. Determine additive-noise flag.
+#   2. Generate Slurm array job.
+#   3. Run IC stability check and optional damping.
+#   4. Apply additive noise and update WRF boundary conditions.
+#   5. Run WRF for all ensemble members.
+#   6. Wait for completion and collect output.
+#   7. Calculate ensemble-mean reflectivity.
+#
+# This file is sourced by DRIVER_WoFS_RLT_v1.csh.
+#
+# Required variables are loaded by the main driver and ENVFILE.
+#
+
+echo "=================================================="
+echo "TASK 07: ADVANCE WRF ENSEMBLE MEMBERS"
+echo "Cycle start: ${thisstart}"
+echo "Cycle end:   ${thisend}"
+echo "=================================================="
+
+set task07_status = 0
+
+#----------------------------------------------------------
+# 1. Validate required directories and inputs
+#----------------------------------------------------------
+if ( ! -d "${RUNDIR}" ) then
+    echo "ERROR: RUNDIR does not exist: ${RUNDIR}"
+    set task07_status = 1
+endif
+
+if ( ! -d "${ENKFDIR}" ) then
+    echo "ERROR: ENKFDIR does not exist: ${ENKFDIR}"
+    set task07_status = 1
+endif
+
+if ( ! -d "${RUNDIR}/${thisstart}" ) then
+    mkdir -p "${RUNDIR}/${thisstart}"
+    if ( $status != 0 ) then
+        echo "ERROR: Cannot create cycle directory"
+        set task07_status = 1
+    endif
+endif
+
+if ( ! -x "${RUNDIR}/advance_time" ) then
+    echo "ERROR: advance_time executable is missing"
+    set task07_status = 1
+endif
+
+if ( $task07_status == 0 ) then
+
+    #------------------------------------------------------
+    # 2. Set additive-noise flag
+    #------------------------------------------------------
+    set noise_flag = 1
+
+    if ( "${starthour}${startmin}" == "${cycle_start}00" ) then
+        set noise_flag = 0
+    endif
+
+    echo "Additive noise flag = ${noise_flag}"
+
+    #------------------------------------------------------
+    # 3. Generate Slurm array job
+    #------------------------------------------------------
+    set ADVJOB = "${RUNDIR}/adv_wrf_mem.job"
+
+    cat >! "${ADVJOB}" << EOF
+#!/bin/csh
+#SBATCH -J adv_wrf_mem
+#SBATCH -o ${RUNDIR}/adv_wrf_mem%a.log
+#SBATCH -e ${RUNDIR}/adv_wrf_mem%a.err
+#SBATCH -p u1-compute
+#SBATCH -q debug
+#SBATCH --mem-per-cpu=2G
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=128
+#SBATCH -n 128
+#SBATCH -t 0:10:00
+
+module purge
+module load intel-oneapi-compilers/2023.2.0
+module load intel-oneapi-mpi/2021.13.1
+module load intel-oneapi-mkl/2024.2.1
+module load hdf5/1.14.3
+module load netcdf-c/4.9.2
+module load netcdf-fortran/4.6.1
+
+source ${GSIRLT}
+source ${ENVFILE}
+
+#--------------------------------------------------------
+# Ensure PnetCDF runtime library is available
+#--------------------------------------------------------
+set pnc_dir = /apps/spack-2024-12/linux-rocky9-x86_64/oneapi-2023.2.0/parallel-netcdf-1.12.3-qthvelpa6vq2zmbc42jwevsr4zjzlg5b/lib
+
+if ( \$?LD_LIBRARY_PATH ) then
+    setenv LD_LIBRARY_PATH \${pnc_dir}:\${LD_LIBRARY_PATH}
+else
+    setenv LD_LIBRARY_PATH \${pnc_dir}
+endif
+
+echo "LD_LIBRARY_PATH=\$LD_LIBRARY_PATH"
+
+set echo
+
+#--------------------------------------------------------
+# 4. Create member working directory
+#--------------------------------------------------------
+set mem = \${SLURM_ARRAY_TASK_ID}
+set memdir = "${RUNDIR}/enkfrun"\${mem}
+
+if ( -d "\${memdir}" ) then
+    rm -rf "\${memdir}"
+endif
+
+mkdir -p "\${memdir}"
+if ( \$status != 0 ) then
+    echo "ERROR: Cannot create member directory \${memdir}"
+    exit 1
+endif
+
+cd "\${memdir}"
+if ( \$status != 0 ) exit 1
+
+#--------------------------------------------------------
+# 5. Prepare member input
+#--------------------------------------------------------
+${SCRIPTDIR}/runwrf_conv.csh \${mem} ${thisstart} ${thisend} ${ENVFILE}
+if ( \$status != 0 ) then
+    echo "ERROR: runwrf_conv.csh failed for member \${mem}"
+    exit 1
+endif
+
+/bin/cp -f ${TEMPLATE_DIR}/input.nml.conv1 ./input.nml
+/bin/cp -f ${ADDNOISEDIR}/add_pert_where_high_refl.exe .
+/bin/cp -f ${ENKFDIR}/refl_obs.txt .
+
+if ( \$status != 0 ) then
+    echo "ERROR: Failed to stage member inputs"
+    exit 1
+endif
+
+#--------------------------------------------------------
+# 6. Check IC stability
+#--------------------------------------------------------
+setenv icfile wrfinput_d01
+
+cat >! check_ic.py << PYEOF
+import os
+import sys
+import numpy as np
+from netCDF4 import Dataset
+
+icfile = os.environ["icfile"]
+
+try:
+    with Dataset(icfile, "r") as f:
+        ph = f.variables["PH"][:]
+        t = f.variables["T"][:]
+        qv = f.variables["QVAPOR"][:]
+
+        ph_range = np.nanmax(np.abs(ph))
+        t_range = np.nanmax(np.abs(t))
+        qv_max = np.nanmax(qv)
+
+    print("IC stability diagnostics:")
+    print("PH maximum absolute value:", ph_range)
+    print("T maximum absolute value:", t_range)
+    print("QVAPOR maximum:", qv_max)
+
+    bad = (
+        not np.isfinite(ph_range)
+        or not np.isfinite(t_range)
+        or not np.isfinite(qv_max)
+        or ph_range > 20000
+        or t_range > 25
+        or qv_max > 0.05
+    )
+
+    if bad:
+        print("BAD_MEMBER")
+        sys.exit(1)
+
+    print("OK_MEMBER")
+    sys.exit(0)
+
+except Exception as exc:
+    print("IC stability check failed:", exc)
+    sys.exit(2)
+PYEOF
+
+python check_ic.py
+set ic_status = \$status
+
+#--------------------------------------------------------
+# 9. Run WRF forecast
+#--------------------------------------------------------
+ulimit -s unlimited
+
+srun -n 128 ${RUNDIR}/WRF_RUN/wrf.exe
+
+if ( \$status != 0 ) then
+    echo "ERROR: WRF failed for member \${mem}"
+    exit 1
+endif
+
+#--------------------------------------------------------
+# 10. Verify forecast output and save results
+#--------------------------------------------------------
+set outfile = "${RUNDIR}/enkfrun"\${mem}"/wrfout_d01_${endyear}-${endmonth}-${endday}_${endhour}:${endmin}:00"
+
+if ( ! -e "\${outfile}" ) then
+    echo "ERROR: WRF output missing for member \${mem}: \${outfile}"
+    exit 1
+endif
+
+set startfile = "wrfout_d01_${startyear}-${startmonth}-${startday}_${starthour}:${startmin}:00"
+
+if ( -e "\${startfile}" ) then
+    mv "\${startfile}" "${RUNDIR}/${thisstart}/"\${startfile}"_"\${mem}
+endif
+
+#/bin/cp -p "\${outfile}" "${RUNDIR}/${thisstart}/wrffcst_d01_${endyear}-${endmonth}-${endday}_${endhour}:${endmin}:00_"\${mem}
+/bin/cp -p "\${outfile}" "${RUNDIR}/${thisstart}/"\${outfile}"_"\${mem}
+
+if ( \$status != 0 ) then
+    echo "ERROR: Cannot save forecast output for member \${mem}"
+    exit 1
+endif
+
+mv "\${outfile}" "${ENKFDIR}/wrfinput_d01."\${mem}
+
+if ( -e rsl.error.0000 ) then
+    /bin/cp -p rsl.error.0000 "${RUNDIR}/${thisstart}/rsl.error.0000_"\${mem}
+endif
+
+touch "${RUNDIR}/adv_wrf_done"\${mem}
+
+echo "Member \${mem} completed successfully"
+exit 0
+EOF
+
+    if ( $status != 0 ) then
+        echo "ERROR: Could not generate ${ADVJOB}"
+        set task07_status = 1
+    endif
+
+endif
+
+#----------------------------------------------------------
+# 4. Submit ensemble array
+#----------------------------------------------------------
+if ( $task07_status == 0 ) then
+
+    # Check for stale completion flags before removing them.
+    set stale_count = `find "${RUNDIR}" -maxdepth 1 -type f -name 'adv_wrf_done*' | wc -l`
+
+    if ( $stale_count > 0 ) then
+        echo "Removing ${stale_count} stale WRF completion flags..."
+
+        find "${RUNDIR}" -maxdepth 1 -type f -name 'adv_wrf_done*' -exec ${REMOVE} {} \;
+
+        if ( $status != 0 ) then
+            echo "ERROR: Could not remove old completion flags"
+            set task07_status = 1
+        endif
+    else
+        echo "No stale WRF completion flags found; skipping removal."
+    endif
+
+endif
+
+if ( $task07_status == 0 ) then
+
+    echo "Submitting WRF ensemble: 1-${ENS_SIZE}"
+
+    sbatch --array=1-${ENS_SIZE} "${ADVJOB}"
+
+    if ( $status != 0 ) then
+        echo "ERROR: Failed to submit WRF ensemble"
+        set task07_status = 1
+    endif
+
+endif
+
+#----------------------------------------------------------
+# 5. Wait for all ensemble members
+#----------------------------------------------------------
+if ( $task07_status == 0 ) then
+
+    set imem = 1
+
+    while ( $imem <= $ENS_SIZE )
+
+        set nwait = 0
+        set donefile = "${RUNDIR}/adv_wrf_done${imem}"
+
+        while ( ! -e "${donefile}" )
+
+            echo "WAITING FOR WRF MEMBER ${imem} TO FINISH"
+            sleep 5
+
+            @ nwait++
+
+            # Prevent an indefinite wait.
+            if ( $nwait >= 720 ) then
+                echo "ERROR: Member ${imem} timed out after 60 minutes"
+                set task07_status = 1
+                break
+            endif
+
+        end
+
+        if ( $task07_status != 0 ) break
+
+        echo "WRF MEMBER ${imem} FINISHED"
+
+        # Remove temporary restart logs where present.
+        if ( -d "${RUNDIR}/enkfrun${imem}" ) then
+            ${REMOVE} "${RUNDIR}/enkfrun${imem}"/rsl*
+        endif
+
+        @ imem++
+
+    end
+
+endif
+
+#----------------------------------------------------------
+# 6. Save reflectivity observations and calculate mean
+#----------------------------------------------------------
+if ( $task07_status == 0 ) then
+
+    if ( -e "${ENKFDIR}/refl_obs.txt" ) then
+        ${MOVE} "${ENKFDIR}/refl_obs.txt" \
+            "${RESULTSDIR}/stdout/refl_obs_${thisstart}.txt"
+    endif
+
+    cd "${ENKFDIR}"
+
+    ${COPY} "${SCRIPTDIR}/run_nceamean_conv_d01.job" .
+
+    if ( $status != 0 ) then
+        echo "ERROR: Cannot copy ensemble-mean job"
+        set task07_status = 1
+    endif
+
+endif
+
+if ( $task07_status == 0 ) then
+
+    # Clear stale flag before submitting a new calculation.
+    ${REMOVE} "${ENKFDIR}/ensmean_done01"
+
+    sbatch "${ENKFDIR}/run_nceamean_conv_d01.job"
+
+    if ( $status != 0 ) then
+        echo "ERROR: Failed to submit ensemble-mean job"
+        set task07_status = 1
+    endif
+
+endif
+
+if ( $task07_status == 0 ) then
+
+    set nwait = 0
+
+    while ( ! -e "${ENKFDIR}/ensmean_done01" )
+
+        echo "WAITING FOR ENSEMBLE MEAN TO FINISH"
+        sleep 3
+
+        @ nwait++
+
+        if ( $nwait >= 1200 ) then
+            echo "ERROR: Ensemble mean timed out after 60 minutes"
+            set task07_status = 1
+            break
+        endif
+
+    end
+
+endif
+
+#----------------------------------------------------------
+# 7. Collect diagnostics
+#----------------------------------------------------------
+if ( $task07_status == 0 ) then
+
+    if ( -d "${RUNDIR}/${thisstart}" ) then
+        ${MOVE} "${ENKFDIR}"/diag* "${RUNDIR}/${thisstart}/"
+    endif
+
+    grep cfl "${RUNDIR}"/enkfrun*/rsl* \
+        >! "${RUNDIR}/cfl.log.${thisstart}"
+
+    echo "TASK 07 completed successfully for ${thisstart}"
+
+else
+
+    echo "ERROR: TASK 07 failed for ${thisstart}"
+
+endif
+
+#----------------------------------------------------------
+# Return status to the main driver.
+#
+# Because this file is sourced, do not use exit here.
+# The main driver must check task07_status explicitly.
+#----------------------------------------------------------
+

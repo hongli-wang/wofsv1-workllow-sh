@@ -217,13 +217,17 @@ endif
 
 # Preserve original initialization behavior.
 # If you had ran coldstart previously, now set coldstart=.false. coldstart_done = .true.
-if ( "${firstcycle_coldstart_done}" == ".true." ) then
+if ( "${firstcycle_coldstart}" == ".false." && \
+     "${firstcycle_coldstart_done}" == ".true." ) then
 
     set datea = `echo "${datea} ${cycleinterval}m" | ${RUNDIR}/advance_time`
-
+    #get restart cycle time if you have ens forecst from a prevoius cycle
+    #set datea = `echo "${datea} 45m" | ${RUNDIR}/advance_time`
     if ( $status != 0 || "${datea}" == "" ) then
         echo "ERROR: Cannot calculate initial analysis time"
         exit 1
+    else
+        echo "This cycle time: ${datea}"
     endif
 
     ##csh -fx "${SCRIPTDIR}/task_01_initialize.csh" "$datea"

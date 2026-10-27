@@ -1,0 +1,27 @@
+#!/bin/csh 
+#======================================================
+#SBATCH -J DIAG_MEAN_RAD
+#SBATCH -o diagmean_rad.o%j
+#SBATCH -e diagmean_rad.err
+#SBATCH -p u1-compute 
+#SBATCH --mem-per-cpu=8G
+#SBATCH -n 1
+#SBATCH -t 0:10:00 
+#======================================================
+source /scratch4/NCEPDEV/fv3-cam/Hongli.Wang/WoFS/scripts/WOFenv_rlt_2026
+source ${TOP_DIR}/realtime.cfg.${event}
+
+set ENVFILE = ${TOP_DIR}/realtime.cfg.${event}
+source ${ENVFILE}
+
+echo "BEGIN DIAG_MEAN_RAD"
+date
+
+srun --mpi=pmi2 innov_mean_radiance.exe namelist.innov.rad > diag_meanrad.output
+
+echo "END DIAG_MEAN_RAD"
+
+touch diagmeanrad_done
+
+date
+exit 0

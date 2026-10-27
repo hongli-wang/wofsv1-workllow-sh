@@ -1,0 +1,28 @@
+#!/bin/csh 
+#======================================================
+#SBATCH -J DIAG_MEAN
+#SBATCH -o diagmean.o%j
+#SBATCH -e diagmean.err
+#SBATCH -p u1-compute 
+#SBATCH --ntasks-per-node=1
+#SBATCH -n 1
+#SBATCH -t 0:10:00 
+#======================================================
+
+source /scratch4/NCEPDEV/fv3-cam/Hongli.Wang/WoFS/scripts/WOFenv_rlt_2026
+source ${TOP_DIR}/realtime.cfg.${event}
+
+set ENVFILE = ${TOP_DIR}/realtime.cfg.${event}
+source ${ENVFILE}
+
+echo "BEGIN DIAG_MEAN"
+date
+
+srun --mpi=pmi2 innov_mean_conv.exe  > diag_mean.output
+
+echo "END DIAG_MEAN"
+
+touch diagmean_done
+
+date
+exit 0

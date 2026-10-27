@@ -1,0 +1,33 @@
+#!/bin/csh 
+#======================================================
+#SBATCH -J NCEA_MEAN_WRFOUT
+#SBATCH -o nceamean01_sm.o%j
+#SBATCH -e nceamean01_sm.err
+#SBATCH -p u1-compute 
+#SBATCH -q debug 
+#SBATCH -n 1
+#SBATCH -t 0:10:00 
+#======================================================
+
+set GSIRLT = /scratch4/NCEPDEV/fv3-cam/Hongli.Wang/WoFS/scripts/WOFenv_rlt_2026
+source ${GSIRLT}
+set ENVFILE = ${TOP_DIR}/realtime.cfg.${event}
+source ${ENVFILE}
+
+module load nco
+
+echo "BEGIN NCEA_MEAN"
+date
+
+cp -pvf wrfinput_d01.1 wrfinput_d01.ensmean
+foreach var ( MU REFL_10CM )
+     set tensout = temp_${var}_mean
+     srun -n 1 ncea -v ${var} wrfinput_d01*    ${tensout}
+     srun -n1 ncks -A temp_${var}_mean wrfinput_d01.ensmean
+end
+
+rm -rf temp_*
+echo "END ENS_MEAN"
+touch ensmean_done01
+date
+exit 0

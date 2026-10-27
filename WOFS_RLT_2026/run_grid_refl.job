@@ -1,0 +1,27 @@
+#!/bin/csh 
+#======================================================
+#SBATCH -J GRIDS_REFL
+#SBATCH -o gridrefl.o%j
+#SBATCH -e gridrefl.err
+#SBATCH -n 1
+#SBATCH -t 0:10:00 
+#SBATCH -p u1-compute 
+#======================================================
+
+#jp set GSIRLT = /scratch/home/wofuser/WOFenv_rlt_2020
+set GSIRLT = /scratch4/NCEPDEV/fv3-cam/Hongli.Wang/WoFS/scripts/WOFenv_rlt_2026 
+source ${GSIRLT}
+set ENVFILE = ${TOP_DIR}/realtime.cfg.${event}
+source ${ENVFILE}
+
+echo "BEGIN GRIDS_REFL"
+date
+
+srun --mpi=pmi2 grid_refl_obs_gsi.exe dbzobs.nc 35 10 wrfinput_d01.ensmean  > grid_refl.output
+
+echo "END GRIDS_REFL"
+
+touch refl_done
+
+date
+exit 0
