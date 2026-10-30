@@ -119,7 +119,7 @@ if ( -e "${ENKFDIR}/grid_refl_obs_gsi.exe" && -e "${ENKFDIR}/run_grid_refl.job" 
     endif
 
     while ( ! -e "${ENKFDIR}/refl_done" )
-        echo "WAITING FOR NCL REFL TO FINISH"
+        echo "WAITING FOR GRID REFL TO FINISH"
         sleep 2
     end
 else
@@ -142,6 +142,13 @@ endif
 #   /bin/cp -pv ${LRAD_DIR}/VEL/${event}/obs_seq_VR_${yyyymmdd}_${hhmm}.nc ${ENKFDIR}/vrobs.nc
 #   set vryes = 1
 #endif
+if ( -e "${obsdir1}/${timestr}-vrobs.nc" ) then
+    /bin/cp -pv "${obsdir1}/${timestr}-vrobs.nc" "${ENKFDIR}/vrobs.nc"
+   set vryes = 1
+else
+    echo "WARNING: VR file not found for ${timestr}"
+endif
+
 #
 # CWP:
 #set cwpyes = 0
@@ -174,6 +181,16 @@ endif
    #   /bin/cp -pv ${SAT_DIR}/RADIANCE/${startyear}/D2/${thisstart}_GOES${GOESV}_TB_ALLSKY.nc ${ENKFDIR}/goes.nc
    #   set goesyes = 1
    #endif
+#2345-abig19.nc
+if ( -e "${obsdir1}/${timestr}-abig19.nc" ) then
+    /bin/cp -pv "${obsdir1}/${timestr}-abig19.nc" "${ENKFDIR}/abig19.nc"
+set goesyes = 1
+#else if ( -e "${obsdir2}/${fulltime}-cwpobs.nc" ) then
+#    /bin/cp -pv "${obsdir2}/${fulltime}-cwpobs.nc" "${ENKFDIR}/cwpobs.nc"
+else
+    echo "WARNING: ABI file not found for ${timestr}"
+endif
+
 #
 # Mesonet:
 # set okmesoyes = 0
@@ -186,19 +203,22 @@ endif
 # Conventional BUFR:
 # set bufryes = 0
    # BUFR DATA
-   # if ( ${startmin} == 15 ) then
-   #    if ( -e ${OBSDIR}/EBUFR/${startyear}/${startmonth}/${startday}/rap.${startyear}${startmonth}${startday}${starthour}.prepbufr.tm00 ) then
-   #       set pbufrfile = ${OBSDIR}/EBUFR/${startyear}/${startmonth}/${startday}/rap.${startyear}${startmonth}${startday}${starthour}.prepbufr.tm00
-   #       /bin/cp -pv ${pbufrfile} ${ENKFDIR}/prepbufr
-   #       set  bufryes = 1
-   #       echo "BUFR DATA ASSIMILATED"
+if ( ${startmin} == 15 ) then
+#    if ( -e ${OBSDIR}/EBUFR/${startyear}/${startmonth}/${startday}/rap.${startyear}${startmonth}${startday}${starthour}.prepbufr.tm00 ) then
+#/scratch4/NCEPDEV/fv3-cam/Hongli.Wang/retro/obs/conv/obs_rap/2026072719.rap.t19z.prepbufr.tm00
+#    set pbufrfile = ${OBSDIR}/EBUFR/${startyear}/${startmonth}/${startday}/rap.${startyear}${startmonth}${startday}${starthour}.prepbufr.tm00
+   if ( -e /scratch4/NCEPDEV/fv3-cam/Hongli.Wang/retro/obs/conv/obs_rap/${startyear}${startmonth}${startday}${starthour}.rap.t${starthour}z.prepbufr.tm00 ) then 
+       set pbufrfile =  /scratch4/NCEPDEV/fv3-cam/Hongli.Wang/retro/obs/conv/obs_rap/${startyear}${startmonth}${startday}${starthour}.rap.t${starthour}z.prepbufr.tm00
+       /bin/cp -pv ${pbufrfile} ${ENKFDIR}/prepbufr
+       set  bufryes = 1
+       echo "BUFR DATA ASSIMILATED"
    #    else if ( -e ${OBSDIR}/RBUFR/${startyear}/${startmonth}/${startday}/rtma.${startyear}${startmonth}${startday}${starthour}00.prepbufr.tm00 ) then
    #       set pbufrfile = ${OBSDIR}/RBUFR/${startyear}/${startmonth}/${startday}/rtma.${startyear}${startmonth}${startday}${starthour}00.prepbufr.tm00
    #       /bin/cp -pv ${pbufrfile} ${ENKFDIR}/prepbufr
    #       set  bufryes = 1
    #       echo "BUFR DATA ASSIMILATED"
-   #    endif
-   # endif
+   endif
+endif
 #
 # AERI / DWL / AMV / FED / UAS:
 # set aeriyes = 0
@@ -269,19 +289,20 @@ if ( ${dlyes} == 1 ) then
 endif
 
 if ( ${reflyes} == 1 ) then
-    echo "    dbzobs.nc       dbz          null        dbz       1.0      0       0         1.04166666667" >> "${ENKFDIR}/gsiparm.anl.obs"
+    echo "    dbzobs.nc       dbz          null        dbz       1.0      0       0         0.3" >> "${ENKFDIR}/gsiparm.anl.obs"
 endif
 
 if ( ${vryes} == 1 ) then
-    echo "    vrobs.nc        rw           null        rw        1.0      0       0         0.11666666667" >> "${ENKFDIR}/gsiparm.anl.obs"
+    echo "    vrobs.nc        rw           null        rw        1.0      0       0         0.3" >> "${ENKFDIR}/gsiparm.anl.obs"
 endif
 
 if ( ${cwpyes} == 1 ) then
-    echo "    cwpobs.nc       cwp          null        cwp       1.0      0       0         0.175" >> "${ENKFDIR}/gsiparm.anl.obs"
+    echo "    cwpobs.nc       cwp          null        cwp       1.0      0       0         0.3" >> "${ENKFDIR}/gsiparm.anl.obs"
 endif
 
 if ( ${goesyes} == 1 ) then
-    echo "    goes.nc         abi          g16         abi_g16   0.0      0       0         0.125" >> "${ENKFDIR}/gsiparm.anl.obs"
+#    echo "    goes.nc         abi          g16         abi_g16   0.0      0       0         0.125" >> "${ENKFDIR}/gsiparm.anl.obs"
+    echo "    abig19.nc         abi          g19         abi_g19   0.0      0       0         0.3" >> "${ENKFDIR}/gsiparm.anl.obs"
 endif
 
 if ( ${amvyes} == 1 ) then
