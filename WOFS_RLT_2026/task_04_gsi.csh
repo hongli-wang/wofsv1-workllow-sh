@@ -120,32 +120,17 @@ set obsdir2 = ${ENKFDIR1}/\${fulltime}
 # Optional observation files
 # ----------------------------------------------------------------------
 
-# GOES
-if ( -e "\${obsdir1}/\${timestr}-goes.nc" ) then
-    /bin/cp -pv "\${obsdir1}/\${timestr}-goes.nc" ./goes.nc
-else if ( -e "\${obsdir2}/\${timestr}-goes.nc" ) then
-    /bin/cp -pv "\${obsdir2}/\${timestr}-goes.nc" ./goes.nc
-else
-    echo "WARNING: GOES file not found for \${timestr}"
-endif
-
 # DBZ
-if ( -e "\${obsdir1}/\${timestr}-dbzobs.nc" ) then
-    /bin/cp -pv "\${obsdir1}/\${timestr}-dbzobs.nc" ./dbzobs.nc
-else if ( -e "\${obsdir2}/\${timestr}-dbzobs.nc" ) then
-    /bin/cp -pv "\${obsdir2}/\${timestr}-dbzobs.nc" ./dbzobs.nc
-else
-    echo "WARNING: DBZ file not found for \${timestr}"
-endif
+#if ( -e "\${obsdir1}/\${timestr}-dbzobs.nc" ) then
+#    /bin/cp -pv "\${obsdir1}/\${timestr}-dbzobs.nc" ./dbzobs.nc
+#else if ( -e "\${obsdir2}/\${timestr}-dbzobs.nc" ) then
+#    /bin/cp -pv "\${obsdir2}/\${timestr}-dbzobs.nc" ./dbzobs.nc
+#else
+#    echo "WARNING: DBZ file not found for \${timestr}"
+#endif
 
-# CWP
-if ( -e "\${obsdir1}/\${timestr}-cwpobs.nc" ) then
-    /bin/cp -pv "\${obsdir1}/\${timestr}-cwpobs.nc" ./cwpobs.nc
-else if ( -e "\${obsdir2}/\${timestr}-cwpobs.nc" ) then
-    /bin/cp -pv "\${obsdir2}/\${timestr}-cwpobs.nc" ./cwpobs.nc
-else
-    echo "WARNING: CWP file not found for \${timestr}"
-endif
+ln -sf ${ENKFDIR}/*.nc .
+ln -sf  ${ENKFDIR}/prepbufr .
 
 # Fixed GSI input files
 
@@ -155,6 +140,7 @@ ln -sf  "${ENKFDIR}/ozinfo" .
 ln -sf  "${ENKFDIR}/satbias_in" . 
 ln -sf  "${ENKFDIR}/satbias_pc" . 
 ln -sf   "${ENKFDIR}/convinfo" . 
+ln -sf  /scratch4/NCEPDEV/fv3-cam/Hongli.Wang/WoFS/diags/retro/gsi1/abi_*.bin  .
 
 /bin/cp -pv "${ANAVINFO}" . 
 /bin/cp -pv "${OBERROR}"  ./errtable 
